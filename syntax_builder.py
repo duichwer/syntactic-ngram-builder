@@ -7,9 +7,10 @@ import os
 import collections
 import traceback
 import sys
-import cStringIO as stringIO
-import gzip
 
+import six
+import util
+from past.builtins import xrange
 from graph import Graph,Dependency
 from config import ext_zero,ext_inc,ext_special,coords,coord_conjs
 from graph import CoNLLFormat, formats
@@ -17,7 +18,7 @@ from graph import CoNLLFormat, formats
 
 
 class NgramBuilder(object):
-    """ Class to build syntactic ngrams. Following the same format as in: 
+    """ Class to build syntactic ngrams. Following the same format as in:
         http://commondatastorage.googleapis.com/books/syntactic-ngrams/index.html
     """
 
@@ -110,7 +111,7 @@ class NgramBuilder(object):
                     new_arc.append(d)
                     new_arc.sort()
                     quadarcs.add(tuple(new_arc))
-            
+
         return quadarcs
 
     def expand_by_one(self,arcs,graph):
@@ -127,7 +128,7 @@ class NgramBuilder(object):
                 dependencies=graph.deps[tok] # all dependents of this particular token
                 for dep in dependencies:
                     if (dep.type in ext_zero) or (dep.type in ext_inc) or (dep.type in ext_special):
-                        continue 
+                        continue
                     if dep not in arc: # not part of arc
                         new_arc=arc[:]
                         new_arc.append(dep)
@@ -164,7 +165,7 @@ class NgramBuilder(object):
                 assert len(token)==1
                 filtered.add((tuple(arc),token.pop()))
         return filtered
-                
+
 
     def buildNgrams(self,graph):
         """ Build all ngrams of length biarcs to quadarcs. """
@@ -226,7 +227,7 @@ class NgramBuilder(object):
                 self.db_batches[u"extended-quadarcs"]+=ext_ngrams
 #            for n in ngrams:
 #                print data, n
-        
+
 
 
 
@@ -243,10 +244,10 @@ class NgramBuilder(object):
         while True:
             sentences=self.queueIN.get() # fetch a list of sentences from queue
             if not sentences: # end signal
-                for key,val in self.db_batches.iteritems(): # send last batches
+                for key,val in six.iteritems(self.db_batches): # send last batches
                     if val:
-                        self.out_queues[key].put(val)             
-                print >> sys.stderr, "builder process ending, returning"
+                        self.out_queues[key].put(val)
+                print("builder process ending, returning", file=sys.stderr)
                 return
             for sent in sentences:
                 if sent[0][1].startswith(u"####FIPBANK"): continue # skip parsebank markers
@@ -254,18 +255,18 @@ class NgramBuilder(object):
                 try:
                     self.process_sentence(sent)
                 except:
-                    print >> sys.stderr, "error in processing sentence"
+                    print("error in processing sentence", file=sys.stderr)
                     traceback.print_exc()
                     sys.stderr.flush()
                 self.treeCounter+=1 # this is needed for unique identifiers
-            for key,val in self.db_batches.iteritems():
+            for key,val in six.iteritems(self.db_batches):
                 if len(val)>5000:
                     self.out_queues[key].put(val)
                     self.db_batches[key]=[]
 
 
 class ArgBuilder(object):
-    """ Class to build verb and noun args. Following (almost) the same format as in: 
+    """ Class to build verb and noun args. Following (almost) the same format as in:
         http://commondatastorage.googleapis.com/books/syntactic-ngrams/index.html
         Differences:
         - include also puntuation
@@ -304,7 +305,7 @@ class ArgBuilder(object):
                 dtype=sent[root_idx-1][self.form.DEPREL] # take as is, may have multiple types but it does not matter
             else:
                 govIndex=r
-            s=u"/".join(i for i in [text,lemma,POS,feat,dtype,unicode(govIndex)])
+            s=u"/".join(i for i in [text,lemma,POS,feat,dtype,str(govIndex)])
             tokens.append(s)
         return root+u"\t"+u" ".join(t for t in tokens)
 
@@ -331,7 +332,7 @@ class ArgBuilder(object):
                 if sent[gov-1][self.form.POS] in (u"V",u"N",u"VERB",u"NOUN"): # yes, we want this one
                     tree[gov].append((tok,deprel))
         # now we need to take care of cases where the verb has same dependents listed there twice with different dtype (e.g. rels)
-        for root,dependents in tree.iteritems():
+        for root,dependents in six.iteritems(tree):
             uniq_deps=list(set([d for d,t in dependents])) # now we have a list of uniq dependents
             deps=[]
             for dep in uniq_deps:
@@ -349,7 +350,7 @@ class ArgBuilder(object):
                 n_args.append(ngram)
         self.v_batch+=v_args
         self.n_batch+=n_args
-            
+
 
 
     def build(self):
@@ -363,7 +364,7 @@ class ArgBuilder(object):
                     self.verb_q.put(self.v_batch)
                 if self.n_batch:
                     self.noun_q.put(self.n_batch)
-                print >> sys.stderr, "no new data, "+str(self.treeCounter)+" sentences processed, arg builder ends"
+                print("no new data, "+str(self.treeCounter)+" sentences processed, arg builder ends", file=sys.stderr)
                 return
             for sent in sentences:
                 if len(sent)>1: # no need to process sentences with lenght 1
@@ -379,7 +380,3 @@ class ArgBuilder(object):
             if len(self.n_batch)>100:
                 self.noun_q.put(self.n_batch)
                 self.n_batch=[]
-
-
-
-

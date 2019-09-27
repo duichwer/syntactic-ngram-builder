@@ -1,16 +1,20 @@
 import multiprocessing
-import Queue
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 import argparse
 import os
 import sys
 
+import util
 from file_io import FileReader, FileWriter, StdoutWriter
 from syntax_builder import NgramBuilder, ArgBuilder
-            
+
 
 def launch_ngrams(args):
 
-    data=u"nodes arcs biarcs triarcs quadarcs extended-nodes extended-arcs extended-biarcs extended-triarcs extended-quadarcs".split()    
+    data=u"nodes arcs biarcs triarcs quadarcs extended-nodes extended-arcs extended-biarcs extended-triarcs extended-quadarcs".split()
 
     # if output directory does not exist, create it
     if args.out_dir and not os.path.exists(args.out_dir):
@@ -38,25 +42,25 @@ def launch_ngrams(args):
             ngram_queues[dataset]=multiprocessing.Queue(25)
 
     ## ngram builder processes (parallel)
-    print >> sys.stderr, "Launching",args.processes,"ngram builder processes"
+    print("Launching",args.processes,"ngram builder processes", file=sys.stderr)
     for _ in range(args.processes):
         builder=NgramBuilder(data_q,ngram_queues,data,args.stdout) # TODO do something smarter with 'data'
         builderProcess=multiprocessing.Process(target=builder.run)
         builderProcess.start()
         procs.append(builderProcess)
-  
+
     w_procs=[]
-  
-    
-    
+
+
+
     if args.stdout: # just one stdout writer process needed
-        print >> sys.stderr, "Launching 1 stdout writer process"
+        print("Launching 1 stdout writer process", file=sys.stderr)
         writer=StdoutWriter(ngram_queues["nodes"])
         writerProcess=multiprocessing.Process(target=writer.run)
         writerProcess.start()
         w_procs.append(writerProcess)
     else: ## separate file writer for each dataset
-        print >> sys.stderr, "Launching",len(data)," file writer processes"
+        print("Launching",len(data)," file writer processes", file=sys.stderr)
         for d in data:
             writer=FileWriter(ngram_queues[d],args.out_dir,d)
             writerProcess=multiprocessing.Process(target=writer.run)
@@ -65,7 +69,7 @@ def launch_ngrams(args):
 
     for p in procs:
         p.join() # wait reader and builder processes to quit before continuing
-    
+
     # send end signal for each DB writer (Thanks @radimrehurek and @fginter for this neat trick!)
     if args.stdout:
         ngram_queues["nodes"].put(None)
@@ -78,7 +82,7 @@ def launch_ngrams(args):
 
 def launch_args(args):
 
-    #data=u"nodes arcs biarcs triarcs quadarcs".split()    
+    #data=u"nodes arcs biarcs triarcs quadarcs".split()
 
     # if output directory does not exist, create it
     if args.out_dir and not os.path.exists(args.out_dir):
@@ -105,25 +109,25 @@ def launch_args(args):
         noun_q=multiprocessing.Queue(15)
 
     ## builder processes (parallel)
-    print >> sys.stderr, "Launching",args.processes,"args builder processes"
+    print("Launching",args.processes,"args builder processes", file=sys.stderr)
     for _ in range(args.processes):
         builder=ArgBuilder(data_q,verb_q,noun_q,args.stdout)
         builderProcess=multiprocessing.Process(target=builder.build)
         builderProcess.start()
         procs.append(builderProcess)
-  
+
     w_procs=[]
-  
-    
-    
+
+
+
     if args.stdout:
-        print >> sys.stderr, "Launching 1 stdout writer processes"
+        print("Launching 1 stdout writer processes", file=sys.stderr)
         writer=StdoutWriter(verb_q)
         writerProcess=multiprocessing.Process(target=writer.run)
         writerProcess.start()
         w_procs.append(writerProcess)
     else: ## separate file writer for each dataset
-        print >> sys.stderr, "Launching 2 file writer processes"
+        print("Launching 2 file writer processes", file=sys.stderr)
         writer=FileWriter(verb_q,args.out_dir,"verb_args")
         writerProcess=multiprocessing.Process(target=writer.run)
         writerProcess.start()
@@ -135,14 +139,14 @@ def launch_args(args):
 
     for p in procs:
         p.join() # wait reader and builder processes to quit before continuing
-    
+
     # send end signal for each DB writer (Thanks @radimrehurek and @fginter for this neat trick!)
     if args.stdout:
         verb_q.put(None)
     else:
         verb_q.put(None)
         noun_q.put(None)
-        
+
     for p in w_procs:
         p.join() # and wait
 
@@ -160,23 +164,18 @@ if __name__==u"__main__":
     g.add_argument('--out_dir', help='Print ngrams to .gz files, give the name of the output directory, where .gz files get written. Mutually exclusive with --stdout.')
     g.add_argument('--stdout', action='store_true', help='Print ngrams to stdout. Mutually exclusive with --out_dir.')
     g.add_argument('--max-sent-len', action='store', type=int, default=256, help='Skip sentences longer than this (prevents memory excursions on extremely long trees). (default %(default)d)')
-    
+
     args = parser.parse_args()
 
 
     if args.args:
-        print >> sys.stderr, "Building verb and noun args..."
+        print("Building verb and noun args...", file=sys.stderr) # TODO should be normal
         launch_args(args)
 
     if args.ngrams:
-        print >> sys.stderr, "Building ngrams..."
+        print("Building ngrams...", file=sys.stderr) # TODO should be normal
         launch_ngrams(args)
-    
+
     if not args.ngrams and not args.args:
-        print >> sys.stderr, "Use either --ngrams (for syntactic ngrams ) or --args (for verb and noun args)."
+        print("Use either --ngrams (for syntactic ngrams ) or --args (for verb and noun args).", file=sys.stderr)
         sys.exit(1)
-
-    
-
-
-

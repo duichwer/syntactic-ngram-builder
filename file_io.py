@@ -2,17 +2,20 @@
 import tarfile
 import gzip
 import codecs
-import cStringIO as stringIO
 import traceback
 import sys
 import os.path
 import glob
 import subprocess # needed for pigz
+import io
+
+import util
+
 
 try:
     import leveldb
 except:
-    print >> sys.stderr, "LevelDB not installed, cannot use DBWriter."
+    print("LevelDB not installed, cannot use DBWriter.", file=sys.stderr)
 
 class TarReader(object):
 
@@ -29,7 +32,7 @@ class TarReader(object):
         for tarInfo in tar:
             if not tarInfo.name.endswith(u".gz"):
                 continue
-            print >> sys.stdout, tarInfo.name
+            print(tarInfo.name, file=sys.stdout)
             try:
                 rawF=tar.extractfile(tarInfo)
                 rawContent=rawF.read()
@@ -38,16 +41,16 @@ class TarReader(object):
                 self.queue.put(rawContent,True,None)
                 counter+=1
             except:
-                print >> sys.stderr, "Skipping", tarInfo.name
+                print("Skipping", tarInfo.name, file=sys.stderr)
                 traceback.print_exc()
                 sys.stderr.flush()
             tar.members=[] #This is *critical* to prevent tar from accumulating the untarred files and eating all memory!
             if (self.sample is not None) and (counter>=self.sample):
                 break
         tar.close()
-        print >> sys.stderr, "Tar reader done,",counter,"files sent to the queue"
+        print("Tar reader done,",counter,"files sent to the queue", file=sys.stderr)
         sys.stderr.flush()
-                
+
         #self.DBwriter.write_batches() # write all remaining batches to the DBs
 
 
@@ -73,12 +76,12 @@ class FileReader(object):
         elif inp.endswith(u".gz") or inp.endswith(u".conll") or inp.endswith(u".conll09") or inp.endswith(u".conllu"): # inp is a gzip or conll file
             self.read_file(inp)
         else:
-            raise ValueError(u"Wrong input format.")
+            raise ValueError(u'Wrong input format.')
         #Signal end of work to all processes (Thanks @radimrehurek and @fginter for this neat trick!)
         for _ in range(processes):
             self.queue.put(None)
-        print >> sys.stderr, "File reader ready, returning"
-        print >> sys.stderr, "Total number of sentences: "+str(self.totalCount)
+        print("File reader ready, returning", file=sys.stderr)
+        print("Total number of sentences: "+str(self.totalCount), file=sys.stderr)
         return
 
     def readGzip(self,fName):
@@ -89,12 +92,12 @@ class FileReader(object):
 
     def read_file(self,fName):
         """ Reads one .gz file and puts sentences into queue. """
-        print >> sys.stderr, fName
+        print(fName, file=sys.stderr)
         if fName.endswith(u".gz"):
             f=codecs.getreader("utf-8")(self.readGzip(fName))
             # f=codecs.getreader("utf-8")(gzip.open(fName)) # TODO use this as a fallback
         else:
-            f=codecs.open(fName,u"rt",u"utf-8")
+            f=io.open(fName, "r", encoding=u"utf-8")
         sentences=[]
         for sent in self.read_conll(f):
             if self.max_sent_len>0 and len(sent)>self.max_sent_len:
@@ -108,7 +111,7 @@ class FileReader(object):
             if sentences:
                 self.queue.put(sentences)
         f.close()
-        
+
 
 
     def read_conll(self,f):
@@ -118,7 +121,7 @@ class FileReader(object):
         for line in f:
             line=line.strip()
             if not line or line.startswith(u"#"): #Do not rely on empty lines in conll files, ignore comments
-                continue 
+                continue
             if line.startswith(u"1\t") and sent: #New sentence, and I have an old one to yield
                 yield sent
                 sent=[]
@@ -150,15 +153,15 @@ class DBWriter(object):
         while True:
             ngram_list=self.queue.get() # fetch new batch
             if not ngram_list: # end signal
-                print >> sys.stderr, "no new data in "+self.dataset+", creating final text file"
+                print("no new data in "+self.dataset+", creating final text file", file=sys.stderr)
                 sys.stderr.flush()
                 try:
                     c=self.create_final_files() # create .gz text file
                 except:
-                    print >> sys.stderr, "error while creating final text file: "+self.dataset+" ,returning"
+                    print("error while creating final text file: "+self.dataset+" ,returning", file=sys.stderr)
                     sys.stderr.flush()
                     return
-                print >> sys.stderr, c,self.dataset,"written, returning"
+                print(c,self.dataset,"written, returning", file=sys.stderr)
                 sys.stderr.flush()
                 return
             try:
@@ -167,9 +170,9 @@ class DBWriter(object):
                     batch.Put(ngram.encode(u"utf-8"),u"1".encode(u"utf-8"))
                 self.DB.Write(batch)
             except:
-                print >> sys.stderr, "error in database writer, batch rejected: "+self.dataset
+                print("error in database writer, batch rejected: "+self.dataset, file=sys.stderr)
                 traceback.print_exc()
-                sys.stderr.flush()      
+                sys.stderr.flush()
 
 
     def create_final_files(self):
@@ -194,7 +197,7 @@ class DBWriter(object):
                 count+=1
         else:
             if count>0 and count>=self.cutoff:
-                f.write((last+u"\t"+unicode(count)+u"\t2014,"+unicode(count)+u"\n").encode(u"utf-8")) # write last one  
+                f.write((last+u"\t"+unicode(count)+u"\t2014,"+unicode(count)+u"\n").encode(u"utf-8")) # write last one
         f.close()
         return totalCounter
 
@@ -211,15 +214,15 @@ class FileWriter(object):
         while True:
             ngram_list=self.queue.get() # fetch new batch
             if not ngram_list: # end signal
-                print >> sys.stderr, "no new data in "+self.dataset
+                print("no new data in "+self.dataset, file=sys.stderr)
                 sys.stderr.flush()
                 self.file_out.close()
                 return
             try:
                 for ngram in ngram_list:
-                    print >> self.file_out, ngram
+                    print(ngram, file=self.file_out)
             except:
-                print >> sys.stderr, "error in file writer, batch rejected: "+self.dataset
+                print("error in file writer, batch rejected: "+self.dataset, file=sys.stderr)
                 traceback.print_exc()
                 sys.stderr.flush()
 
@@ -235,7 +238,5 @@ class StdoutWriter(object):
             if not ngram_list: # end signal (None)
                 return
             for ngram in ngram_list:
-                print >> sys.stdout, ngram
+                print(ngram, file=sys.stdout)
             sys.stdout.flush()
-
-

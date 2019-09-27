@@ -1,4 +1,5 @@
 from collections import namedtuple,defaultdict
+from util import PY3__cmp__
 
 CoNLLFormat=namedtuple("CoNLLFormat",["ID","FORM","LEMMA","POS","FEAT","HEAD","DEPREL","DEPS"])
 #Column lists for the various formats
@@ -7,7 +8,7 @@ formats={"conll09":CoNLLFormat(0,1,2,4,6,8,10,None),"conllu":CoNLLFormat(0,1,2,3
 # 0  1    2     3    4    5   6    7      8    9
 #id form lemma cpos pos feat head deprel deps misc
 
-class Dependency(object):
+class Dependency(PY3__cmp__):
     """ Simple class to represent dependency. """
 
     def __init__(self,g,d,t):
@@ -47,7 +48,7 @@ class Graph(object):
         return g
 
     @classmethod
-    def create(cls,sent,conll_format="conllu"): 
+    def create(cls,sent,conll_format="conllu"):
         """ This is the way to create graphs! """
         g=cls()
         form=formats[conll_format] #named tuple with the column indices
@@ -106,8 +107,3 @@ class Graph(object):
     def isEmpty(self):
         if len(self.nodes)>0: return False
         else: return True
-
-
-
-
-
